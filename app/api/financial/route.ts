@@ -1,15 +1,54 @@
 import { NextResponse } from 'next/server';
-import yahooFinance from 'yahoo-finance2';
+import { spawn } from 'child_process';
+import path from 'path';
 
-interface FinancialStatement {
-  totalRevenue: number | null;
-  grossProfit: number | null;
-  operatingIncome: number | null;
-  netIncome: number | null;
-}
+async function runPythonScript(symbol: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const scriptPath = path.join(process.cwd(), 'scripts', 'get_financial_statements.py');
+    
+    const pythonProcess = spawn('python3', [scriptPath, symbol], {
+      env: { 
+        ...process.env, 
+        PYTHONPATH: process.env.PYTHONPATH || process.cwd(),
+        PATH: process.env.PATH
+      },
+      cwd: process.cwd()
+    });
+    
+    let dataString = '';
+    let errorString = '';
 
-interface IncomeStatements {
-  [date: string]: FinancialStatement;
+    pythonProcess.stdout.on('data', (data) => {
+      dataString += data.toString();
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      errorString += data.toString();
+      console.error('Python stderr:', data.toString());
+    });
+
+    pythonProcess.on('close', (code) => {
+      if (code !== 0) {
+        return reject(new Error(`Python process failed with code ${code}: ${errorString}`));
+      }
+
+      try {
+        const result = JSON.parse(dataString);
+        if (result.status === 'error') {
+          return reject(new Error(result.error));
+        }
+        return resolve(result);
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown JSON parse error';
+        return reject(new Error(`Failed to parse Python output: ${errorMessage}`));
+      }
+    });
+
+    pythonProcess.on('error', (err) => {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown process error';
+      reject(new Error(`Failed to start Python process: ${errorMessage}`));
+    });
+  });
 }
 
 export async function GET(request: Request) {
@@ -24,95 +63,16 @@ export async function GET(request: Request) {
       );
     }
 
-    const [quote, summary] = await Promise.all([
-      yahooFinance.quote(symbol),
-      yahooFinance.quoteSummary(symbol, {
-        modules: [
-          'price',
-          'financialData',
-          'defaultKeyStatistics',
-          'summaryDetail',
-          'incomeStatementHistory',
-          'incomeStatementHistoryQuarterly',
-          'assetProfile'  // Added for sector and industry info
-        ]
-      })
-    ]);
-
-    // Transform quarterly statements
-    const quarterlyStatements = summary.incomeStatementHistoryQuarterly?.incomeStatementHistory || [];
-    const transformedQuarterly = quarterlyStatements.reduce<IncomeStatements>((acc, statement) => {
-      const date = new Date(statement.endDate).toISOString().split('T')[0];
-      acc[date] = {
-        totalRevenue: statement.totalRevenue || null,
-        grossProfit: statement.grossProfit || null,
-        operatingIncome: statement.operatingIncome || null,
-        netIncome: statement.netIncome || null
-      };
-      return acc;
-    }, {});
-
-    // Transform annual statements
-    const annualStatements = summary.incomeStatementHistory?.incomeStatementHistory || [];
-    const transformedAnnual = annualStatements.reduce<IncomeStatements>((acc, statement) => {
-      const date = new Date(statement.endDate).toISOString().split('T')[0];
-      acc[date] = {
-        totalRevenue: statement.totalRevenue || null,
-        grossProfit: statement.grossProfit || null,
-        operatingIncome: statement.operatingIncome || null,
-        netIncome: statement.netIncome || null
-      };
-      return acc;
-    }, {});
-
-    const transformedData = {
-      quote: {
-        price: quote.regularMarketPrice || null,
-        changePercent: quote.regularMarketChangePercent || null,
-        volume: quote.regularMarketVolume || null,
-        previousClose: quote.regularMarketPreviousClose || null,
-        dayHigh: quote.regularMarketDayHigh || null,
-        dayLow: quote.regularMarketDayLow || null,
-        averageVolume: quote.averageDailyVolume3Month || null
-      },
-      fundamentals: {
-        marketCap: quote.marketCap || null,
-        peRatio: summary.summaryDetail?.trailingPE || null,
-        eps: summary.defaultKeyStatistics?.trailingEps || null,
-        profitMargin: summary.financialData?.profitMargins
-          ? (summary.financialData.profitMargins * 100)
-          : null,
-        revenue: summary.financialData?.totalRevenue || null,
-        fiftyTwoWeekLow: summary.summaryDetail?.fiftyTwoWeekLow || null,
-        fiftyTwoWeekHigh: summary.summaryDetail?.fiftyTwoWeekHigh || null,
-        companyName: quote.longName || symbol,
-        sector: summary.assetProfile?.sector || null,
-        industry: summary.assetProfile?.industry || null,
-        beta: summary.defaultKeyStatistics?.beta || null,
-        dividendYield: summary.summaryDetail?.dividendYield 
-          ? (summary.summaryDetail.dividendYield * 100)
-          : null,
-        priceToBook: summary.defaultKeyStatistics?.priceToBook || null
-      },
-      financials: {
-        financial_statements: {
-          quarterly: {
-            income_statement: transformedQuarterly
-          },
-          annual: {
-            income_statement: transformedAnnual
-          }
-        }
-      }
-    };
-
-    return NextResponse.json(transformedData);
-  } catch (error) {
-    console.error('Stock API Error:', error);
+    const data = await runPythonScript(symbol);
+    return NextResponse.json(data);
+    
+  } catch (error: unknown) {
+    console.error('API Error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      {
+      { 
         error: 'Failed to fetch stock data',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorMessage
       },
       { status: 500 }
     );
