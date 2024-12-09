@@ -8,17 +8,13 @@ import { AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-type MetricKey = 'totalRevenue' | 'grossProfit' | 'operatingIncome' | 'netIncome' | 'ebitda' | 'researchDevelopment' | 'sellingGeneralAdministrative' | 'totalOperatingExpenses';
+type MetricKey = 'totalRevenue' | 'grossProfit' | 'operatingIncome' | 'netIncome';
 
 interface FinancialStatement {
   totalRevenue: number | null;
   grossProfit: number | null;
   operatingIncome: number | null;
   netIncome: number | null;
-  ebitda: number | null;
-  researchDevelopment: number | null;
-  sellingGeneralAdministrative: number | null;
-  totalOperatingExpenses: number | null;
 }
 
 interface ApiResponse {
@@ -27,9 +23,9 @@ interface ApiResponse {
     changePercent: number | null;
     volume: number | null;
     previousClose: number | null;
-    averageVolume: number | null;
     dayHigh: number | null;
     dayLow: number | null;
+    averageVolume: number | null;
   };
   fundamentals: {
     marketCap: number | null;
@@ -40,6 +36,8 @@ interface ApiResponse {
     fiftyTwoWeekLow: number | null;
     fiftyTwoWeekHigh: number | null;
     companyName: string;
+    sector: string | null;
+    industry: string | null;
     beta: number | null;
     dividendYield: number | null;
     priceToBook: number | null;
@@ -64,11 +62,7 @@ const metricLabels: Record<MetricKey, string> = {
   totalRevenue: 'Total Revenue',
   grossProfit: 'Gross Profit',
   operatingIncome: 'Operating Income',
-  netIncome: 'Net Income',
-  ebitda: 'EBITDA',
-  researchDevelopment: 'R&D Expenses',
-  sellingGeneralAdministrative: 'SG&A Expenses',
-  totalOperatingExpenses: 'Total Operating Expenses'
+  netIncome: 'Net Income'
 };
 
 const FinancialViewer = () => {
@@ -76,7 +70,6 @@ const FinancialViewer = () => {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('quarterly');
 
   const fetchData = async () => {
     if (!symbol) return;
@@ -128,39 +121,55 @@ const FinancialViewer = () => {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div>
           <div className="text-sm text-gray-500">Price</div>
-          <div className="font-medium">{formatValue(quote?.price)}</div>
-          <div className="text-sm">{formatPercentageChange(quote?.changePercent)}</div>
+          <div className="font-medium">{formatValue(quote.price)}</div>
+          <div className="text-sm">{formatPercentageChange(quote.changePercent)}</div>
         </div>
         <div>
           <div className="text-sm text-gray-500">Market Cap</div>
-          <div className="font-medium">{formatValue(fundamentals?.marketCap)}</div>
+          <div className="font-medium">{formatValue(fundamentals.marketCap)}</div>
         </div>
         <div>
           <div className="text-sm text-gray-500">P/E Ratio</div>
-          <div className="font-medium">{fundamentals?.peRatio?.toFixed(2) || 'N/A'}</div>
+          <div className="font-medium">{fundamentals.peRatio?.toFixed(2) || 'N/A'}</div>
         </div>
         <div>
           <div className="text-sm text-gray-500">EPS</div>
-          <div className="font-medium">{formatValue(fundamentals?.eps)}</div>
+          <div className="font-medium">{formatValue(fundamentals.eps)}</div>
+        </div>
+        <div>
+          <div className="text-sm text-gray-500">Sector</div>
+          <div className="font-medium">{fundamentals.sector || 'N/A'}</div>
+        </div>
+        <div>
+          <div className="text-sm text-gray-500">Industry</div>
+          <div className="font-medium">{fundamentals.industry || 'N/A'}</div>
+        </div>
+        <div>
+          <div className="text-sm text-gray-500">Beta</div>
+          <div className="font-medium">{fundamentals.beta?.toFixed(2) || 'N/A'}</div>
+        </div>
+        <div>
+          <div className="text-sm text-gray-500">Dividend Yield</div>
+          <div className="font-medium">{formatValue(fundamentals.dividendYield, true)}</div>
         </div>
         <div>
           <div className="text-sm text-gray-500">Revenue (TTM)</div>
-          <div className="font-medium">{formatValue(fundamentals?.revenue)}</div>
+          <div className="font-medium">{formatValue(fundamentals.revenue)}</div>
         </div>
         <div>
           <div className="text-sm text-gray-500">Profit Margin</div>
-          <div className="font-medium">{formatValue(fundamentals?.profitMargin, true)}</div>
+          <div className="font-medium">{formatValue(fundamentals.profitMargin, true)}</div>
         </div>
         <div>
           <div className="text-sm text-gray-500">52 Week Range</div>
           <div className="font-medium text-sm">
-            {formatValue(fundamentals?.fiftyTwoWeekLow)} - {formatValue(fundamentals?.fiftyTwoWeekHigh)}
+            {formatValue(fundamentals.fiftyTwoWeekLow)} - {formatValue(fundamentals.fiftyTwoWeekHigh)}
           </div>
         </div>
         <div>
           <div className="text-sm text-gray-500">Volume</div>
           <div className="font-medium">
-            {quote?.volume?.toLocaleString() || 'N/A'}
+            {quote.volume?.toLocaleString() || 'N/A'}
           </div>
         </div>
       </div>
@@ -180,10 +189,6 @@ const FinancialViewer = () => {
       'totalRevenue',
       'grossProfit',
       'operatingIncome',
-      'ebitda',
-      'researchDevelopment',
-      'sellingGeneralAdministrative',
-      'totalOperatingExpenses',
       'netIncome'
     ];
 
@@ -249,7 +254,7 @@ const FinancialViewer = () => {
         <div className="space-y-4">
           <Card>
             <CardContent className="p-4">
-              <h2 className="text-xl font-bold mb-4">{data.fundamentals?.companyName || symbol}</h2>
+              <h2 className="text-xl font-bold mb-4">{data.fundamentals.companyName || symbol}</h2>
               {renderFinancialMetrics()}
             </CardContent>
           </Card>
