@@ -7,9 +7,53 @@ import { Input } from '@/components/ui/input';
 import { AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
+type MetricKey = 'totalRevenue' | 'grossProfit' | 'operatingIncome' | 'netIncome';
+
+interface FinancialStatement {
+  totalRevenue: number | null;
+  grossProfit: number | null;
+  operatingIncome: number | null;
+  netIncome: number | null;
+}
+
+interface ApiResponse {
+  quote: {
+    price: number | null;
+    changePercent: number | null;
+    volume: number | null;
+    previousClose: number | null;
+  };
+  fundamentals: {
+    marketCap: number | null;
+    peRatio: number | null;
+    eps: number | null;
+    profitMargin: number | null;
+    revenue: number | null;
+    fiftyTwoWeekLow: number | null;
+    fiftyTwoWeekHigh: number | null;
+    companyName: string;
+  };
+  financials?: {
+    financial_statements: {
+      quarterly: {
+        income_statement: {
+          [date: string]: FinancialStatement;
+        };
+      };
+    };
+  };
+}
+
+const metricLabels: Record<MetricKey, string> = {
+  totalRevenue: 'Total Revenue',
+  grossProfit: 'Gross Profit',
+  operatingIncome: 'Operating Income',
+  netIncome: 'Net Income'
+};
+
 const FinancialViewer = () => {
   const [symbol, setSymbol] = useState('');
-  const [data, setData] = useState(null);
+  const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -28,14 +72,15 @@ const FinancialViewer = () => {
       
       setData(result);
     } catch (err) {
-      setError(err.message);
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(errorMessage);
       setData(null);
     } finally {
       setLoading(false);
     }
   };
 
-  const formatValue = (value) => {
+  const formatValue = (value: number | null) => {
     if (value == null) return 'N/A';
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -43,6 +88,45 @@ const FinancialViewer = () => {
       notation: 'compact',
       maximumFractionDigits: 1
     }).format(value);
+  };
+
+  const renderFinancialTable = () => {
+    if (!data?.financials?.financial_statements?.quarterly?.income_statement) {
+      return null;
+    }
+
+    const statements = data.financials.financial_statements.quarterly.income_statement;
+    const dates = Object.keys(statements).sort();
+    if (dates.length === 0) return null;
+
+    const metrics: MetricKey[] = ['totalRevenue', 'grossProfit', 'operatingIncome', 'netIncome'];
+
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full">
+          <thead>
+            <tr className="border-b">
+              <th className="text-left p-2">Metric</th>
+              {dates.map(date => (
+                <th key={date} className="text-right p-2">{date}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {metrics.map(metric => (
+              <tr key={metric} className="border-b">
+                <td className="p-2">{metricLabels[metric]}</td>
+                {dates.map(date => (
+                  <td key={date} className="text-right p-2">
+                    {formatValue(statements[date][metric])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
   };
 
   return (
@@ -96,7 +180,9 @@ const FinancialViewer = () => {
                 <div>
                   <div className="text-sm text-gray-500">Profit Margin</div>
                   <div className="font-medium">
-                    {data.fundamentals?.profitMargin?.toFixed(2)}%
+                    {typeof data.fundamentals?.profitMargin === 'number' 
+                      ? `${data.fundamentals.profitMargin.toFixed(2)}%` 
+                      : 'N/A'}
                   </div>
                 </div>
                 <div>
@@ -113,36 +199,7 @@ const FinancialViewer = () => {
             <Card>
               <CardContent className="p-4">
                 <h3 className="text-lg font-semibold mb-4">Recent Quarterly Results</h3>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left p-2">Metric</th>
-                        {Object.keys(Object.values(data.financials.financial_statements.quarterly.income_statement)[0] || {})
-                          .sort()
-                          .map(date => (
-                            <th key={date} className="text-right p-2">{date}</th>
-                          ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(data.financials.financial_statements.quarterly.income_statement[
-                        Object.keys(data.financials.financial_statements.quarterly.income_statement)[0]
-                      ] || {}).map(([metric]) => (
-                        <tr key={metric} className="border-b">
-                          <td className="p-2">{metric}</td>
-                          {Object.keys(data.financials.financial_statements.quarterly.income_statement)
-                            .sort()
-                            .map(date => (
-                              <td key={date} className="text-right p-2">
-                                {formatValue(data.financials.financial_statements.quarterly.income_statement[date][metric])}
-                              </td>
-                            ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                {renderFinancialTable()}
               </CardContent>
             </Card>
           )}
